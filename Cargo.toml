@@ -1,0 +1,14 @@
+[package]
+name = "auria-router"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/auria-core/auria-runtime"
+authors = ["AURIA Team <auria@dust.llc>"]
+description = "AURIA Runtime Core - Deterministic routing logic"
+
+[dependencies]
+auria-core = { path = "../auria-core", version = "0.1.0"}
+anyhow = "1.0"
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
