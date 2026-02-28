@@ -1,3 +1,10 @@
+// File: lib.rs - This file is part of AURIA
+// Copyright (c) 2026 AURIA Developers and Contributors
+// Description:
+//     Deterministic routing logic for expert selection in AURIA Runtime Core.
+//     Implements routing strategies that select which experts to activate
+//     for each inference step based on tier and token position.
+//
 use auria_core::{ExpertId, RoutingDecision, Tier};
 
 pub trait Router: Send + Sync {
