@@ -12,3 +12,7 @@ auria-core = { path = "../auria-core", version = "0.1.0"}
 anyhow = "1.0"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+libfuzzer-sys = "0.4"
+proptest = "1.4"

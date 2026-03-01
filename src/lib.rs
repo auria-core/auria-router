@@ -222,6 +222,7 @@ pub fn create_default_router() -> DeterministicRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_deterministic_router() {
@@ -232,13 +233,93 @@ mod tests {
 
     #[test]
     fn test_gating_router() {
-        let router = GatingRouter::new(1.0);
+        let mut router = GatingRouter::new(1.0);
         let mut weights = HashMap::new();
         weights.insert(ExpertId([1u8; 32]), 0.5);
         weights.insert(ExpertId([2u8; 32]), 0.3);
         weights.insert(ExpertId([3u8; 32]), 0.2);
+        router.set_gate_weights(weights);
 
         let decision = router.route(Tier::Nano, 0);
         assert_eq!(decision.expert_ids.len(), 2);
+    }
+
+    proptest! {
+        #[test]
+        fn test_deterministic_router_returns_valid_ids(num_experts in 1u32..256, tier in 0u8..4) {
+            let router = DeterministicRouter::new(num_experts);
+            let tier = match tier {
+                0 => Tier::Nano,
+                1 => Tier::Standard,
+                2 => Tier::Pro,
+                _ => Tier::Max,
+            };
+
+            let decision = router.route(tier, 0);
+
+            prop_assert!(!decision.expert_ids.is_empty());
+        }
+
+        #[test]
+        fn test_deterministic_router_deterministic(num_experts in 1u32..128, tier in 0u8..4, token in 0u64..1000u64) {
+            let router = DeterministicRouter::new(num_experts);
+            let tier = match tier {
+                0 => Tier::Nano,
+                1 => Tier::Standard,
+                2 => Tier::Pro,
+                _ => Tier::Max,
+            };
+
+            let decision1 = router.route(tier, token);
+            let decision2 = router.route(tier, token);
+
+            prop_assert_eq!(decision1.expert_ids.len(), decision2.expert_ids.len());
+        }
+
+        #[test]
+        fn test_router_expert_count_scaling_by_tier(num_experts in 8u32..128) {
+            let router = DeterministicRouter::new(num_experts);
+
+            let nano = router.route(Tier::Nano, 0);
+            let standard = router.route(Tier::Standard, 0);
+            let pro = router.route(Tier::Pro, 0);
+            let max = router.route(Tier::Max, 0);
+
+            prop_assert!(nano.expert_ids.len() <= standard.expert_ids.len());
+            prop_assert!(standard.expert_ids.len() <= pro.expert_ids.len());
+            prop_assert!(pro.expert_ids.len() <= max.expert_ids.len());
+        }
+
+        #[test]
+        fn test_gating_router_valid_weights(num_experts in 2u32..16, top_k in 1u32..4) {
+            let mut router = GatingRouter::new(top_k as f32);
+
+            let mut weights = HashMap::new();
+            for i in 0..num_experts {
+                let mut id = [0u8; 32];
+                id[0] = i as u8;
+                weights.insert(ExpertId(id), 1.0 / num_experts as f32);
+            }
+            router.set_gate_weights(weights);
+
+            let decision = router.route(Tier::Standard, 0);
+
+            prop_assert!(!decision.expert_ids.is_empty());
+            prop_assert!(decision.expert_ids.len() <= num_experts as usize);
+        }
+
+        #[test]
+        fn test_router_different_tokens_produce_results(num_experts in 4u32..32, count in 1usize..10) {
+            let router = DeterministicRouter::new(num_experts);
+
+            let mut results: Vec<usize> = Vec::new();
+            for token in 0..count {
+                let decision = router.route(Tier::Standard, token as u64);
+                results.push(decision.expert_ids.len());
+            }
+
+            prop_assert!(!results.is_empty());
+            prop_assert!(results.iter().all(|&r| r > 0));
+        }
     }
 }
