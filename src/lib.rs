@@ -48,7 +48,15 @@ impl Router for DeterministicRouter {
             Tier::Max => 16,
         };
         let ids = self.get_top_k_experts(token_index, k);
-        RoutingDecision { expert_ids: ids }
+        RoutingDecision {
+            expert_ids: ids,
+            confidence_scores: vec![1.0; k as usize],
+            gating_weights: vec![1.0; k as usize],
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
     }
 
     fn route_with_weights(
@@ -67,9 +75,21 @@ impl Router for DeterministicRouter {
         let mut sorted: Vec<_> = weights.iter().collect();
         sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let ids: Vec<ExpertId> = sorted.iter().take(k as usize).map(|(id, _)| **id).collect();
+        let ids: Vec<ExpertId> = sorted
+            .iter()
+            .take(k as usize)
+            .map(|(id, _)| (*id).clone())
+            .collect();
 
-        RoutingDecision { expert_ids: ids }
+        RoutingDecision {
+            expert_ids: ids,
+            confidence_scores: vec![1.0; k as usize],
+            gating_weights: vec![1.0; k as usize],
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
     }
 }
 
@@ -94,17 +114,20 @@ impl GatingRouter {
         self.gate_weights = weights;
     }
 
-    fn softmax(weights: &HashMap<ExpertId, f32>, temperature: f32) -> HashMap<ExpertId, f32> {
+    fn softmax(weights: &HashMap<ExpertId, f32>, temperature: f32) -> Vec<(ExpertId, f32)> {
         let max_weight = weights.values().cloned().fold(f32::NEG_INFINITY, f32::max);
 
         let exp_weights: Vec<(ExpertId, f32)> = weights
             .iter()
-            .map(|(id, w)| (*id, ((w - max_weight) / temperature).exp()))
+            .map(|(id, w)| (id.clone(), ((w - max_weight) / temperature).exp()))
             .collect();
 
         let sum: f32 = exp_weights.iter().map(|(_, e)| e).sum();
 
-        exp_weights.iter().map(|(id, e)| (*id, e / sum)).collect()
+        exp_weights
+            .into_iter()
+            .map(|(id, e)| (id, e / sum))
+            .collect()
     }
 }
 
@@ -119,12 +142,22 @@ impl Router for GatingRouter {
 
         let probs = Self::softmax(&self.gate_weights, self.temperature);
 
-        let mut sorted: Vec<_> = probs.iter().collect();
-        sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut sorted = probs;
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let ids: Vec<ExpertId> = sorted.iter().take(k as usize).map(|(id, _)| **id).collect();
+        let selected: Vec<_> = sorted.into_iter().take(k as usize).collect();
+        let ids: Vec<ExpertId> = selected.iter().map(|(id, _)| id.clone()).collect();
+        let gating_weights: Vec<f32> = selected.iter().map(|(_, w)| *w).collect();
 
-        RoutingDecision { expert_ids: ids }
+        RoutingDecision {
+            expert_ids: ids,
+            confidence_scores: gating_weights.clone(),
+            gating_weights,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
     }
 
     fn route_with_weights(
@@ -163,6 +196,12 @@ impl Router for RoundRobinRouter {
         if self.experts.is_empty() {
             return RoutingDecision {
                 expert_ids: Vec::new(),
+                confidence_scores: Vec::new(),
+                gating_weights: Vec::new(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
             };
         }
 
@@ -170,10 +209,18 @@ impl Router for RoundRobinRouter {
             .current
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let ids: Vec<ExpertId> = (0..k)
-            .map(|i| self.experts[(start + i as usize) % self.experts.len()])
+            .map(|i| self.experts[(start + i as usize) % self.experts.len()].clone())
             .collect();
 
-        RoutingDecision { expert_ids: ids }
+        RoutingDecision {
+            expert_ids: ids,
+            confidence_scores: vec![1.0; k as usize],
+            gating_weights: vec![1.0; k as usize],
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
     }
 
     fn route_with_weights(
