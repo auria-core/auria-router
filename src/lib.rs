@@ -62,7 +62,7 @@ impl Router for DeterministicRouter {
     fn route_with_weights(
         &self,
         tier: Tier,
-        token_index: u64,
+        _token_index: u64,
         weights: &HashMap<ExpertId, f32>,
     ) -> RoutingDecision {
         let k = match tier {
